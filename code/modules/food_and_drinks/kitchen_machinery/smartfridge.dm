@@ -22,6 +22,8 @@
 	var/list/initial_contents
 	/// If the machine shows an approximate number of its contents on its sprite
 	var/visible_contents = TRUE
+	///Icon to flash when user is denied a vend
+	var/icon_deny = "smartfridge-deny"
 
 /obj/machinery/smartfridge/Initialize()
 	. = ..()
@@ -46,23 +48,37 @@
 
 /obj/machinery/smartfridge/update_icon_state()
 	if(machine_stat)
-		icon_state = "[initial(icon_state)]-off"
-		return ..()
+		if(!visible_contents)
+			add_overlay("[initial(icon_state)]-off") // turns off the computer screen and fits a generic dark case
+			return ..()
+		else
+			add_overlay("[initial(icon_state)]-off")
+			var/list/shown_contents = contents - component_parts
+			switch(shown_contents.len) // fits a specific dark case
+				if(0)
+					add_overlay("[initial(icon_state)]-1-off")
+				if(1 to 25)
+					add_overlay("[initial(icon_state)]-2-off")
+				if(26 to 75)
+					add_overlay("[initial(icon_state)]-3-off")
+				if(76 to INFINITY)
+					add_overlay("[initial(icon_state)]-4-off")
+			return ..()
 
 	if(!visible_contents)
 		icon_state = "[initial(icon_state)]"
 		return ..()
 
 	var/list/shown_contents = contents - component_parts
-	switch(shown_contents.len)
+	switch(shown_contents.len) // fits a specific case
 		if(0)
-			icon_state = "[initial(icon_state)]"
+			add_overlay("[initial(icon_state)]-1")
 		if(1 to 25)
-			icon_state = "[initial(icon_state)]1"
+			add_overlay("[initial(icon_state)]-2")
 		if(26 to 75)
-			icon_state = "[initial(icon_state)]2"
+			add_overlay("[initial(icon_state)]-3")
 		if(76 to INFINITY)
-			icon_state = "[initial(icon_state)]3"
+			add_overlay("[initial(icon_state)]-4")
 	return ..()
 
 /obj/machinery/smartfridge/update_overlays()
@@ -76,7 +92,7 @@
 
 /obj/machinery/smartfridge/attackby(obj/item/O, mob/living/user, params)
 	if(default_deconstruction_screwdriver(user, icon_state, icon_state, O))
-		cut_overlays()
+		cut_overlay("[initial(icon_state)]-panel")
 		if(panel_open)
 			add_overlay("[initial(icon_state)]-panel")
 		SStgui.update_uis(src)
@@ -97,6 +113,7 @@
 		var/list/shown_contents = contents - component_parts
 		if(shown_contents.len >= max_n_of_items)
 			to_chat(user, SPAN_WARNING("\The [src] is full!"))
+			flick_overlay(icon_deny,src)
 			return FALSE
 
 		if(accept_check(O))
@@ -522,8 +539,8 @@
 // Disk """fridge"""
 // ----------------------------
 /obj/machinery/smartfridge/disks
-	name = "disk compartmentalizer"
-	desc = "A machine capable of storing a variety of disks. Denoted by most as the DSU (disk storage unit)."
+	name = "disk storage unit"
+	desc = "A machine capable of storing a variety of disks."
 	icon_state = "disktoaster"
 	pass_flags = PASSTABLE
 	visible_contents = FALSE

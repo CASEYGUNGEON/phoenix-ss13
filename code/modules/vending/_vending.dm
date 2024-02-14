@@ -3,7 +3,6 @@
  */
 
 /*
-
 /obj/machinery/vending/[vendors name here]   // --vending machine template   :)
 	name = ""
 	desc = ""
@@ -24,29 +23,43 @@ IF YOU MODIFY THE PRODUCTS LIST OF A MACHINE, MAKE SURE TO UPDATE ITS RESUPPLY C
  */
 /datum/data/vending_product
 	name = "generic"
-	///Typepath of the product that is created when this record "sells"
+	/// Typepath of the product that is created when this record "sells"
 	var/product_path = null
-	///How many of this product we currently have
+	/// How many of this product we currently have
 	var/amount = 0
-	///How many we can store at maximum
+	/// How many we can store at maximum
 	var/max_amount = 0
-	///Does the item have a custom price override
+	/// Does the item have a custom price override
 	var/custom_price
-	///Does the item have a custom premium price override
+	/// Does the item have a custom premium price override
 	var/custom_premium_price
-	///Whether spessmen with an ID with an age below AGE_MINOR (20 by default) can buy this item
+	/// Whether spessmen with an ID with an age below AGE_MINOR (20 by default) can buy this item
 	var/age_restricted = FALSE
+	/// The category the product was in, if any.
+	var/category // Sourced directly from product_categories.
 
 /**
  * # vending machines
  *
- * Captalism in the year 2525, everything in a vending machine, even love
+ * Captalism 540 years from now, everything in a vending machine, even love!
  */
 /obj/machinery/vending
 	name = "\improper Vendomat"
 	desc = "A generic vending machine."
 	icon = 'icons/obj/vending.dmi'
 	icon_state = "generic"
+	///Overlay when broken
+	var/icon_broken = "generic-broken"
+	///Overlay to flash when user is denied a vend
+	var/icon_deny
+	///Overlay when off
+	var/icon_off = "generic-off"
+	///Overlay when maintenance panel removed
+	var/icon_panel = "generic-panel"
+	///Overlay to flash when vending an item to the user
+	var/icon_vend
+	///Name of lighting mask for the vending machine
+	var/light_mask = "generic-light-mask"
 	layer = BELOW_OBJ_LAYER
 	density = TRUE
 	verb_say = "beeps"
@@ -74,28 +87,34 @@ IF YOU MODIFY THE PRODUCTS LIST OF A MACHINE, MAKE SURE TO UPDATE ITS RESUPPLY C
 	var/forcecrit = 0
 	var/num_shards = 7
 	var/list/pinned_mobs = list()
-
 	/**
 	  * List of products this machine sells
 	  *
 	  * form should be list(/type/path = amount, /type/path2 = amount2)
 	  */
 	var/list/products = list()
-
+	/**
+	 * List of products this machine sells, categorized.
+	 * Can only be used as an alternative to `products`, not alongside it.
+	 *
+	 * Form should be list(
+	 * 	"name" = "Category Name",
+	 * 	"products" = list(/type/path = amount, ...),
+	 * )
+	 */
+	var/list/product_categories = null
 	/**
 	  * List of products this machine sells when you hack it
 	  *
 	  * form should be list(/type/path = amount, /type/path2 = amount2)
 	  */
 	var/list/contraband = list()
-
 	/**
 	  * List of premium products this machine sells
 	  *
 	  * form should be list(/type/path, /type/path2) as there is only ever one in stock
 	  */
 	var/list/premium = list()
-
 	///String of slogans separated by semicolons, optional
 	var/product_slogans = ""
 	///String of small ad messages in the vending screen - random chance
@@ -114,11 +133,7 @@ IF YOU MODIFY THE PRODUCTS LIST OF A MACHINE, MAKE SURE TO UPDATE ITS RESUPPLY C
 	///Last world tick we sent a slogan message out
 	var/last_slogan = 0
 	///How many ticks until we can send another
-	var/slogan_delay = 6000
-	///Icon when vending an item to the user
-	var/icon_vend
-	///Icon to flash when user is denied a vend
-	var/icon_deny
+	var/slogan_delay = 6900
 	///World ticks the machine is electified for
 	var/seconds_electrified = MACHINE_NOT_ELECTRIFIED
 	///When this is TRUE, we fire items at customers! We're broken!
@@ -142,31 +157,22 @@ IF YOU MODIFY THE PRODUCTS LIST OF A MACHINE, MAKE SURE TO UPDATE ITS RESUPPLY C
 	///Whether our age check is currently functional
 	var/age_restrictions = TRUE
 	/**
-	  * Is this item on station or not
-	  *
-	  * if it doesn't originate from off-station during mapload, everything is free
-	  */
-	var/onstation = TRUE //if it doesn't originate from off-station during mapload, everything is free
+	 * Is this item on station or not
+	 * if it doesn't originate from off-station during mapload, everything is free
+	 */
+	var/onstation = TRUE
 	///A variable to change on a per instance basis on the map that allows the instance to force cost and ID requirements
 	var/onstation_override = FALSE //change this on the object on the map to override the onstation check. DO NOT APPLY THIS GLOBALLY.
-
 	///ID's that can load this vending machine wtih refills
 	var/list/canload_access_list
-
 
 	var/list/vending_machine_input = list()
 	///Display header on the input view
 	var/input_display_header = "Custom Vendor"
-
 	//The type of refill canisters used by this machine.
 	var/obj/item/vending_refill/refill_canister = null
-
 	/// how many items have been inserted in a vendor
 	var/loaded_items = 0
-
-	///Name of lighting mask for the vending machine
-	var/light_mask
-
 	/// used for narcing on underages
 	var/obj/item/radio/Radio
 
@@ -226,6 +232,8 @@ IF YOU MODIFY THE PRODUCTS LIST OF A MACHINE, MAKE SURE TO UPDATE ITS RESUPPLY C
 	if(!component_parts)
 		return
 
+	build_products_from_categories()
+
 	product_records = list()
 	hidden_records = list()
 	coin_records = list()
@@ -253,9 +261,14 @@ IF YOU MODIFY THE PRODUCTS LIST OF A MACHINE, MAKE SURE TO UPDATE ITS RESUPPLY C
 
 /obj/machinery/vending/update_icon_state()
 	if(machine_stat & BROKEN)
-		icon_state = "[initial(icon_state)]-broken"
+		add_overlay("[icon_off]")
+		add_overlay("[icon_broken]")
 		return ..()
-	icon_state = "[initial(icon_state)][powered() ? null : "-off"]"
+	if(!BROKEN)
+		cut_overlay("[icon_broken]")
+		return ..()
+	add_overlay("[powered() ? null : icon_off]")
+	cut_overlay("[!powered() ? icon_off : null]")
 	return ..()
 
 
@@ -302,11 +315,19 @@ GLOBAL_LIST_EMPTY(vending_products)
  * Arguments:
  * * productlist - the list of products that need to be converted
  * * recordlist - the list containing /datum/data/vending_product datums
+ * * categories - A list in the format of product_categories to source category from
  * * startempty - should we set vending_product record amount from the product list (so it's prefilled at roundstart)
  */
-/obj/machinery/vending/proc/build_inventory(list/productlist, list/recordlist, start_empty = FALSE)
+/obj/machinery/vending/proc/build_inventory(list/productlist, list/recordlist, list/categories, start_empty = FALSE)
 	default_price = round(initial(default_price) * SSeconomy.inflation_value())
 	extra_price = round(initial(extra_price) * SSeconomy.inflation_value())
+
+	var/list/product_to_category = list()
+	for (var/list/category as anything in categories)
+		var/list/products = category["products"]
+		for (var/product_key in products)
+			product_to_category[product_key] = category
+
 	for(var/typepath in productlist)
 		var/amount = productlist[typepath]
 		if(isnull(amount))
@@ -324,7 +345,42 @@ GLOBAL_LIST_EMPTY(vending_products)
 		R.custom_price = round(initial(temp.custom_price) * SSeconomy.inflation_value())
 		R.custom_premium_price = round(initial(temp.custom_premium_price) * SSeconomy.inflation_value())
 		R.age_restricted = initial(temp.age_restricted)
+		R.category = product_to_category[typepath]
 		recordlist += R
+
+/**Builds all available inventories for the vendor - standard, contraband and premium
+ * Arguments:
+ * start_empty - bool to pass into build_inventory that determines whether a product entry starts with available stock or not
+*/
+/obj/machinery/vending/proc/build_inventories(start_empty)
+	build_inventory(products, product_records, product_categories, start_empty)
+	build_inventory(contraband, hidden_records, create_categories_from("Contraband", contraband), start_empty)
+	build_inventory(premium, coin_records, create_categories_from("Premium", premium), start_empty)
+
+/**
+ * Returns a list of data about the category
+ * Arguments:
+ * name - string for the name of the category
+ * icon - string for the fontawesome icon to use in the UI for the category
+ * products - list of products available in the category
+ */
+/obj/machinery/vending/proc/create_categories_from(name, products)
+	return list(list(
+		"name" = name,
+		"products" = products,
+	))
+
+///Populates list of products with categorized products
+/obj/machinery/vending/proc/build_products_from_categories()
+	if (isnull(product_categories))
+		return
+
+	products = list()
+
+	for (var/list/category in product_categories)
+		var/list/category_products = category["products"]
+		for (var/product_key in category_products)
+			products[product_key] += category_products[product_key]
 
 /**
  * Reassign the prices of the vending machine as a result of the inflation value, as provided by SSeconomy
@@ -366,10 +422,27 @@ GLOBAL_LIST_EMPTY(vending_products)
 		canister.contraband = contraband.Copy()
 	if (!canister.premium)
 		canister.premium = premium.Copy()
+
 	. = 0
-	. += refill_inventory(canister.products, product_records)
+
+	if (isnull(canister.product_categories) && !isnull(product_categories))
+		canister.product_categories = product_categories.Copy()
+
+	if (!isnull(canister.product_categories))
+		var/list/products_unwrapped = list()
+		for (var/list/category as anything in canister.product_categories)
+			var/list/products = category["products"]
+			for (var/product_key in products)
+				products_unwrapped[product_key] += products[product_key]
+
+		. += refill_inventory(products_unwrapped, product_records) // we want our cats thank you very much
+	else
+		. += refill_inventory(canister.products, product_records) // no cats just products
+
 	. += refill_inventory(canister.contraband, hidden_records)
 	. += refill_inventory(canister.premium, coin_records)
+	return .
+
 /**
  * Refill our inventory from the passed in product list into the record list
  *
@@ -399,7 +472,8 @@ GLOBAL_LIST_EMPTY(vending_products)
 	if (!R)
 		CRASH("Constructible vending machine did not have a refill canister")
 
-	R.products = unbuild_inventory(product_records)
+	unbuild_inventory_into(product_records, R.products, R.product_categories)
+
 	R.contraband = unbuild_inventory(hidden_records)
 	R.premium = unbuild_inventory(coin_records)
 
@@ -411,6 +485,58 @@ GLOBAL_LIST_EMPTY(vending_products)
 	for(var/R in recordlist)
 		var/datum/data/vending_product/record = R
 		.[record.product_path] += record.amount
+
+/**
+ * Unbuild product_records into categorized product lists to the machine's refill canister.
+ * Does not handle contraband/premium products, only standard stock and any other categories used by the vendor(see: ClothesMate).
+ * If a product has no category, puts it into standard stock category.
+ * Arguments:
+ * product_records - list of products of the vendor
+ * products - list of products of the refill canister
+ * product_categories - list of product categories of the refill canister
+ */
+/obj/machinery/vending/proc/unbuild_inventory_into(list/product_records, list/products, list/product_categories)
+	products?.Cut()
+	product_categories?.Cut()
+
+	var/others_have_category = null
+
+	var/list/categories_to_index = list()
+
+	for (var/datum/data/vending_product/record as anything in product_records)
+		var/list/category = record.category
+		var/has_category = !isnull(category)
+		//check if there're any uncategorized products
+		if (isnull(others_have_category))
+			others_have_category = has_category
+		else if (others_have_category != has_category)
+			if (has_category)
+				WARNING("[record.product_path] in [type] has a category, but other products don't")
+			else
+				WARNING("[record.product_path] in [type] does not have a category, but other products do")
+
+			continue
+
+		if (has_category)
+			var/index = categories_to_index.Find(category)
+
+			if (index) //if we've already established a category, add the product there
+				var/list/category_in_list = product_categories[index]
+				var/list/products_in_category = category_in_list["products"]
+				products_in_category[record.product_path] += record.amount
+			else //create a category that the product is supposed to have and put it there
+				categories_to_index += list(category)
+				index = categories_to_index.len
+
+				var/list/category_clone = category.Copy()
+
+				var/list/initial_product_list = list()
+				initial_product_list[record.product_path] = record.amount
+				category_clone["products"] = initial_product_list
+
+				product_categories += list(category_clone)
+		else //no category found - dump it into standard stock
+			products[record.product_path] = record.amount
 
 /obj/machinery/vending/crowbar_act(mob/living/user, obj/item/I)
 	if(!component_parts)
@@ -430,9 +556,9 @@ GLOBAL_LIST_EMPTY(vending_products)
 		return TRUE
 	if(anchored)
 		default_deconstruction_screwdriver(user, icon_state, icon_state, I)
-		cut_overlays()
+		cut_overlay("[icon_panel]")
 		if(panel_open)
-			add_overlay("[initial(icon_state)]-panel")
+			add_overlay("[icon_panel]")
 		updateUsrDialog()
 	else
 		to_chat(user, SPAN_WARNING("You must first secure [src]."))
@@ -740,6 +866,16 @@ GLOBAL_LIST_EMPTY(vending_products)
 	.["onstation"] = onstation
 	.["department"] = payment_department
 	.["jobDiscount"] = VENDING_DISCOUNT
+	.["categories"] = list()
+	if(!isnull(product_categories))
+		.["product_records"] = collect_records_for_static_data(product_records, product_categories)
+		.["coin_records"] = collect_records_for_static_data(coin_records, product_categories, premium = TRUE)
+		.["hidden_records"] = collect_records_for_static_data(hidden_records, product_categories, premium = TRUE)
+
+		.["categories"] = product_categories
+		return
+
+
 	.["product_records"] = list()
 	for (var/datum/data/vending_product/R in product_records)
 		var/list/data = list(
@@ -772,6 +908,46 @@ GLOBAL_LIST_EMPTY(vending_products)
 			premium = TRUE
 		)
 		.["hidden_records"] += list(data)
+
+
+
+/**
+ * Returns a list of given product records of the vendor to be used in UI.
+ * arguments:
+ * records - list of records available
+ * categories - list of categories available
+ * premium - bool of whether a record should be priced by a custom/premium price or not
+ */
+/obj/machinery/vending/proc/collect_records_for_static_data(list/records, list/categories, premium)
+	var/static/list/default_category = list(
+		"name" = "Products",
+	)
+
+	var/list/out_records = list()
+
+	for (var/datum/data/vending_product/record as anything in records)
+		var/list/static_record = list(
+			path = replacetext(replacetext("[record.product_path]", "/obj/item/", ""), "/", "-"),
+			name = record.name,
+			price = premium ? (record.custom_premium_price || extra_price) : (record.custom_price || default_price),
+			max_amount = record.max_amount,
+			ref = REF(record),
+		)
+
+		var/list/category = record.category || default_category
+		if (!isnull(category))
+			if (!(category["name"] in categories))
+				categories[category["name"]] = list(
+				)
+
+			static_record["category"] = category["name"]
+
+		if (premium)
+			static_record["premium"] = TRUE
+
+		out_records += list(static_record)
+
+	return out_records
 
 /obj/machinery/vending/ui_data(mob/user)
 	. = list()
@@ -840,7 +1016,7 @@ GLOBAL_LIST_EMPTY(vending_products)
 		return
 	if (R.amount <= 0)
 		say("Sold out of [R.name].")
-		flick(icon_deny,src)
+		flick_overlay(icon_deny,src)
 		vend_ready = TRUE
 		return
 	if(onstation)
@@ -850,17 +1026,17 @@ GLOBAL_LIST_EMPTY(vending_products)
 			C = L.get_idcard(TRUE)
 		if(!C)
 			say("No card found.")
-			flick(icon_deny,src)
+			flick_overlay(icon_deny,src)
 			vend_ready = TRUE
 			return
 		else if (!C.registered_account)
 			say("No account found.")
-			flick(icon_deny,src)
+			flick_overlay(icon_deny,src)
 			vend_ready = TRUE
 			return
 		else if(!C.registered_account.account_job)
 			say("Departmental accounts have been blacklisted from personal expenses due to embezzlement.")
-			flick(icon_deny, src)
+			flick_overlay(icon_deny, src)
 			vend_ready = TRUE
 			return
 		else if(age_restrictions && R.age_restricted && (!C.registered_age || C.registered_age < AGE_MINOR))
@@ -869,7 +1045,7 @@ GLOBAL_LIST_EMPTY(vending_products)
 				Radio.set_frequency(FREQ_SECURITY)
 				Radio.talk_into(src, "SECURITY ALERT: Underaged crewmember [usr] recorded attempting to purchase [R.name] in [get_area(src)]. Please watch for substance abuse.", FREQ_SECURITY)
 				GLOB.narcd_underages += usr
-			flick(icon_deny,src)
+			flick_overlay(icon_deny,src)
 			vend_ready = TRUE
 			return
 		var/datum/bank_account/account = C.registered_account
@@ -881,7 +1057,7 @@ GLOBAL_LIST_EMPTY(vending_products)
 			price_to_use = R.custom_premium_price ? R.custom_premium_price : extra_price
 		if(price_to_use && !account.adjust_money(-price_to_use))
 			say("You do not possess the funds to purchase [R.name].")
-			flick(icon_deny,src)
+			flick_overlay(icon_deny,src)
 			vend_ready = TRUE
 			return
 		var/datum/bank_account/D = SSeconomy.get_dep_account(payment_department)
@@ -896,7 +1072,7 @@ GLOBAL_LIST_EMPTY(vending_products)
 		last_shopper = REF(usr)
 	use_power(5)
 	if(icon_vend) //Show the vending animation if needed
-		flick(icon_vend,src)
+		flick_overlay(icon_vend,src)
 	playsound(src, 'sound/machines/machine_vend.ogg', 50, TRUE, extrarange = -3)
 	var/obj/item/vended_item = new R.product_path(get_turf(src))
 	R.amount--
@@ -1115,12 +1291,12 @@ GLOBAL_LIST_EMPTY(vending_products)
 				C = L.get_idcard(TRUE)
 			if(!C)
 				say("No card found.")
-				flick(icon_deny,src)
+				flick_overlay(icon_deny,src)
 				vend_ready = TRUE
 				return
 			else if (!C.registered_account)
 				say("No account found.")
-				flick(icon_deny,src)
+				flick_overlay(icon_deny,src)
 				vend_ready = TRUE
 				return
 			var/datum/bank_account/account = C.registered_account
@@ -1231,12 +1407,10 @@ GLOBAL_LIST_EMPTY(vending_products)
 	//starts in a state where you can move it
 	panel_open = TRUE
 	set_anchored(FALSE)
-	add_overlay("[initial(icon_state)]-panel")
+	add_overlay("[icon_panel]")
 	//and references the deity
 	name = "[GLOB.deity]'s Consecrated Vendor"
 	desc = "A vending machine created by [GLOB.deity]."
 	slogan_list = list("[GLOB.deity] says: It's your divine right to buy!")
 	add_filter("vending_outline", 9, list("type" = "outline", "color" = COLOR_VERY_SOFT_YELLOW))
 	add_filter("vending_rays", 10, list("type" = "rays", "size" = 35, "color" = COLOR_VIVID_YELLOW))
-
-
