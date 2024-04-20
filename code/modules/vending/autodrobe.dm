@@ -2,7 +2,12 @@
 	name = "\improper AutoDrobe"
 	desc = "A vending machine for costumes."
 	icon_state = "theater"
-	icon_deny = "theater-deny"
+	icon_broken = "theater-broken"
+	icon_deny = "wardrobe-deny"
+	icon_off = "theater-off"
+	icon_panel = "theater-panel"
+	icon_vend = "wardrobe-vend"
+	light_mask = "theater-light-mask"
 	req_access = list(ACCESS_THEATRE)
 	product_slogans = "Dress for success!;Suited and booted!;It's show time!;Why leave style up to fate? Use AutoDrobe!"
 	vend_reply = "Thank you for using AutoDrobe!"
@@ -149,7 +154,6 @@
 	default_price = PAYCHECK_ASSISTANT * 0.8 //Default of 40.
 	extra_price = PAYCHECK_HARD
 	payment_department = ACCOUNT_SRV
-	light_mask="theater-light-mask"
 
 /obj/machinery/vending/autodrobe/canLoadItem(obj/item/I,mob/user)
 	return (I.type in products)
