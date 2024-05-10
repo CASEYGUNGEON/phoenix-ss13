@@ -78,11 +78,11 @@ GLOBAL_LIST_INIT(turfs_without_ground, typecacheof(list(
 #define isdullahan(A) (is_species(A, /datum/species/dullahan))
 #define ismonkey(A) (is_species(A, /datum/species/monkey))
 
-#define issynthliz(A) (is_species(A,/datum/species/synthliz))
 #define isvox(A) (is_species(A,/datum/species/vox))
-#define isipc(A) (is_species(A,/datum/species/ipc))
+#define issynthetic(A) (is_species(A,/datum/species/synthetic))
 #define ismammal(A) (is_species(A,/datum/species/mammal))
 #define ispodweak(A) (is_species(A,/datum/species/pod/podweak))
+#define isdiona(A) (is_species(A,/datum/species/diona))
 #define isxenohybrid(A) (is_species(A,/datum/species/xeno))
 #define isroundstartslime(A) (is_species(A,/datum/species/jelly/roundstartslime))
 
